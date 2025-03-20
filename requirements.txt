@@ -1,2 +1,7 @@
 yfinance
-pd
+pandas
+numpy == 2.1
+matplotlib
+pyts
+fastai
+mplfinance
