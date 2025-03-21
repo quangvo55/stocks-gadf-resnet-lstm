@@ -4,8 +4,11 @@ import torch.optim as optim
 from torch.utils.data import Dataset, DataLoader
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.model_selection import train_test_split
 from sklearn.metrics import mean_squared_error, mean_absolute_error, r2_score
+import pandas as pd
 import os
+from datetime import datetime
 
 # Custom dataset for GADF images and targets
 class GADFDataset(Dataset):
@@ -62,10 +65,10 @@ class ResidualBlock(nn.Module):
         
         return out
 
-# Define the ResNet model
-class ResNet(nn.Module):
-    def __init__(self, block, layers, num_classes=1):
-        super(ResNet, self).__init__()
+# Define the ResNet-RNN hybrid model
+class ResNetRNN(nn.Module):
+    def __init__(self, block, layers, rnn_type='gru', hidden_size=128, num_rnn_layers=1, dropout=0.2, num_classes=1):
+        super(ResNetRNN, self).__init__()
         self.in_channels = 64
         self.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         self.bn1 = nn.BatchNorm2d(64)
@@ -78,7 +81,34 @@ class ResNet(nn.Module):
         self.layer4 = self._make_layer(block, 512, layers[3], stride=2)
         
         self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(512, num_classes)
+        
+        # Feature dimension after CNN
+        self.feature_dim = 512
+        
+        # Choose between LSTM and GRU
+        self.rnn_type = rnn_type
+        if rnn_type == 'lstm':
+            self.rnn = nn.LSTM(
+                input_size=self.feature_dim,
+                hidden_size=hidden_size,
+                num_layers=num_rnn_layers,
+                batch_first=True,
+                dropout=dropout if num_rnn_layers > 1 else 0
+            )
+        else:  # Default to GRU
+            self.rnn = nn.GRU(
+                input_size=self.feature_dim,
+                hidden_size=hidden_size,
+                num_layers=num_rnn_layers,
+                batch_first=True,
+                dropout=dropout if num_rnn_layers > 1 else 0
+            )
+        
+        # Final fully connected layer
+        self.fc = nn.Linear(hidden_size, num_classes)
+        
+        # Dropout for regularization
+        self.dropout = nn.Dropout(dropout)
         
     def _make_layer(self, block, out_channels, blocks, stride=1):
         downsample = None
@@ -98,6 +128,7 @@ class ResNet(nn.Module):
         return nn.Sequential(*layers)
     
     def forward(self, x):
+        # CNN feature extraction
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.relu(x)
@@ -109,18 +140,53 @@ class ResNet(nn.Module):
         x = self.layer4(x)
         
         x = self.avgpool(x)
-        x = torch.flatten(x, 1)
+        x = torch.flatten(x, 1)  # Flatten to [batch_size, features]
+        
+        # Reshape for RNN input: [batch_size, sequence_length, features]
+        # For a single image, sequence_length = 1
+        x = x.unsqueeze(1)
+        
+        # RNN processing
+        if self.rnn_type == 'lstm':
+            x, (_, _) = self.rnn(x)
+        else:  # GRU
+            x, _ = self.rnn(x)
+        
+        # Take the output of the last time step
+        x = x[:, -1, :]
+        
+        # Apply dropout for regularization
+        x = self.dropout(x)
+        
+        # Final prediction
         x = self.fc(x)
         
         return x
 
-# Create ResNet-18 model
-def resnet18():
-    return ResNet(ResidualBlock, [2, 2, 2, 2])
+# Create ResNet-18-RNN hybrid models
+def resnet18_lstm(hidden_size=128, num_rnn_layers=1, dropout=0.2):
+    return ResNetRNN(ResidualBlock, [2, 2, 2, 2], rnn_type='lstm', 
+                  hidden_size=hidden_size, num_rnn_layers=num_rnn_layers, dropout=dropout)
 
-# Create ResNet-34 model
+def resnet18_gru(hidden_size=128, num_rnn_layers=1, dropout=0.2):
+    return ResNetRNN(ResidualBlock, [2, 2, 2, 2], rnn_type='gru', 
+                  hidden_size=hidden_size, num_rnn_layers=num_rnn_layers, dropout=dropout)
+
+# Create ResNet-34-RNN hybrid models
+def resnet34_lstm(hidden_size=128, num_rnn_layers=1, dropout=0.2):
+    return ResNetRNN(ResidualBlock, [3, 4, 6, 3], rnn_type='lstm', 
+                  hidden_size=hidden_size, num_rnn_layers=num_rnn_layers, dropout=dropout)
+
+def resnet34_gru(hidden_size=128, num_rnn_layers=1, dropout=0.2):
+    return ResNetRNN(ResidualBlock, [3, 4, 6, 3], rnn_type='gru', 
+                  hidden_size=hidden_size, num_rnn_layers=num_rnn_layers, dropout=dropout)
+
+# Legacy functions for backward compatibility
+def resnet18():
+    return resnet18_gru()  # Default to GRU
+
 def resnet34():
-    return ResNet(ResidualBlock, [3, 4, 6, 3])
+    return resnet34_gru()  # Default to GRU
 
 # Training function
 def train_model(model, train_loader, val_loader, criterion, optimizer, scheduler, num_epochs=25, device='cpu'):
@@ -309,10 +375,11 @@ def plot_predictions(results, save_path=None):
     print(f"R²: {results['r2']:.4f}")
 
 # Main function to train the model
-def train_stock_prediction_model(X, y, model_type='resnet18', batch_size=32, num_epochs=50, 
-                                output_dir='model_output', test_size=0.2, val_size=0.2):
+def train_stock_prediction_model(X, y, model_type='resnet18_gru', batch_size=32, num_epochs=50, 
+                                output_dir='model_output', test_size=0.2, val_size=0.2,
+                                rnn_hidden_size=128, rnn_num_layers=1, dropout=0.2):
     """
-    Train a ResNet model to predict stock prices from GADF images.
+    Train a ResNet-RNN hybrid model to predict stock prices from GADF images.
     
     Parameters:
     -----------
@@ -321,7 +388,13 @@ def train_stock_prediction_model(X, y, model_type='resnet18', batch_size=32, num
     y : numpy array
         Target values (future stock prices)
     model_type : str
-        Type of ResNet model to use ('resnet18' or 'resnet34')
+        Type of model to use:
+        - 'resnet18_gru': ResNet-18 with GRU
+        - 'resnet18_lstm': ResNet-18 with LSTM
+        - 'resnet34_gru': ResNet-34 with GRU
+        - 'resnet34_lstm': ResNet-34 with LSTM
+        - 'resnet18': Legacy option (uses GRU)
+        - 'resnet34': Legacy option (uses GRU)
     batch_size : int
         Batch size for training
     num_epochs : int
@@ -332,11 +405,17 @@ def train_stock_prediction_model(X, y, model_type='resnet18', batch_size=32, num
         Proportion of data to use for testing
     val_size : float
         Proportion of training data to use for validation
+    rnn_hidden_size : int
+        Hidden size for the RNN layer
+    rnn_num_layers : int
+        Number of RNN layers
+    dropout : float
+        Dropout rate for regularization
         
     Returns:
     --------
     model : PyTorch model
-        Trained ResNet model
+        Trained ResNet-RNN model
     results : dict
         Evaluation results
     """
@@ -371,13 +450,32 @@ def train_stock_prediction_model(X, y, model_type='resnet18', batch_size=32, num
     val_loader = DataLoader(val_dataset, batch_size=batch_size)
     test_loader = DataLoader(test_dataset, batch_size=batch_size)
     
-    # Create model
-    if model_type == 'resnet18':
-        model = resnet18()
+    # Create model based on type
+    if model_type == 'resnet18_gru':
+        model = resnet18_gru(hidden_size=rnn_hidden_size, num_rnn_layers=rnn_num_layers, dropout=dropout)
+    elif model_type == 'resnet18_lstm':
+        model = resnet18_lstm(hidden_size=rnn_hidden_size, num_rnn_layers=rnn_num_layers, dropout=dropout)
+    elif model_type == 'resnet34_gru':
+        model = resnet34_gru(hidden_size=rnn_hidden_size, num_rnn_layers=rnn_num_layers, dropout=dropout)
+    elif model_type == 'resnet34_lstm':
+        model = resnet34_lstm(hidden_size=rnn_hidden_size, num_rnn_layers=rnn_num_layers, dropout=dropout)
+    elif model_type == 'resnet18':
+        model = resnet18()  # Legacy support
     elif model_type == 'resnet34':
-        model = resnet34()
+        model = resnet34()  # Legacy support
     else:
-        raise ValueError("model_type must be 'resnet18' or 'resnet34'")
+        raise ValueError("Invalid model_type. Choose from 'resnet18_gru', 'resnet18_lstm', 'resnet34_gru', 'resnet34_lstm'")
+    
+    # Log model architecture and hyperparameters
+    with open(os.path.join(output_dir, 'model_architecture.txt'), 'w') as f:
+        f.write(f"Model type: {model_type}\n")
+        f.write(f"RNN hidden size: {rnn_hidden_size}\n")
+        f.write(f"RNN number of layers: {rnn_num_layers}\n")
+        f.write(f"Dropout rate: {dropout}\n")
+        f.write(f"Batch size: {batch_size}\n")
+        f.write(f"Learning rate: 0.001\n")
+        f.write("\nModel Architecture:\n")
+        f.write(str(model))
     
     # Define loss function and optimizer
     criterion = nn.MSELoss()

@@ -12,8 +12,9 @@ from gadf_conversion import process_stock_data, convert_to_gadf, create_windows
 from resnet_prediction_model import train_stock_prediction_model, predict_stock_prices, resnet18, resnet34
 
 def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction_horizon=1,
-                         target_column='Close', model_type='resnet18', batch_size=32, 
-                         num_epochs=50, test_size=0.2, val_size=0.2):
+                         target_column='Close', model_type='resnet18_gru', batch_size=32, 
+                         num_epochs=50, test_size=0.2, val_size=0.2,
+                         rnn_hidden_size=128, rnn_num_layers=1, dropout=0.2):
     """
     Run the complete pipeline from CSV data to trained prediction model.
     
@@ -22,15 +23,21 @@ def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction
     csv_file_path : str
         Path to CSV file with stock data
     window_size : int
-        Size of each window in hours
+        Size of each window in hours (now just used for naming)
     step_size : int
-        Number of steps to move forward when creating each window
+        Number of steps to move forward when creating each window (not used with daily grouping)
     prediction_horizon : int
-        How many steps ahead to predict
+        How many days ahead to predict
     target_column : str
         Column to use for time series and prediction targets
     model_type : str
-        Type of ResNet model to use ('resnet18' or 'resnet34')
+        Type of model to use:
+        - 'resnet18_gru': ResNet-18 with GRU
+        - 'resnet18_lstm': ResNet-18 with LSTM
+        - 'resnet34_gru': ResNet-34 with GRU
+        - 'resnet34_lstm': ResNet-34 with LSTM
+        - 'resnet18': Legacy option (uses GRU)
+        - 'resnet34': Legacy option (uses GRU)
     batch_size : int
         Batch size for training
     num_epochs : int
@@ -39,11 +46,17 @@ def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction
         Proportion of data to use for testing
     val_size : float
         Proportion of training data to use for validation
+    rnn_hidden_size : int
+        Hidden size for the RNN layer
+    rnn_num_layers : int
+        Number of RNN layers
+    dropout : float
+        Dropout rate for regularization
         
     Returns:
     --------
     model : PyTorch model
-        Trained ResNet model
+        Trained ResNet-RNN hybrid model
     results : dict
         Evaluation results
     df : pandas.DataFrame
@@ -51,7 +64,7 @@ def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction
     """
     # Create timestamp for output directories
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    output_dir = f"predictions/stock_prediction_{timestamp}"
+    output_dir = f"predictions/prediction_{timestamp}"
     os.makedirs(output_dir, exist_ok=True)
     
     # Step 1: Process the stock data to create GADF images
@@ -69,11 +82,14 @@ def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction
         f.write(f"Prediction horizon: {prediction_horizon}\n")
         f.write(f"Target column: {target_column}\n")
         f.write(f"Model type: {model_type}\n")
+        f.write(f"RNN hidden size: {rnn_hidden_size}\n")
+        f.write(f"RNN number of layers: {rnn_num_layers}\n")
+        f.write(f"Dropout rate: {dropout}\n")
         f.write(f"Number of GADF images: {len(gadf_images)}\n")
         f.write(f"Data shape - X: {X.shape}, y: {y.shape}\n")
     
-    # Step 2: Train the ResNet model
-    print("\nStep 2: Training ResNet model...")
+    # Step 2: Train the ResNet-RNN hybrid model
+    print(f"\nStep 2: Training {model_type} model...")
     model, results = train_stock_prediction_model(
         X, y, 
         model_type=model_type,
@@ -81,7 +97,10 @@ def run_complete_pipeline(csv_file_path, window_size=24, step_size=1, prediction
         num_epochs=num_epochs,
         output_dir=os.path.join(output_dir, 'model_output'),
         test_size=test_size,
-        val_size=val_size
+        val_size=val_size,
+        rnn_hidden_size=rnn_hidden_size,
+        rnn_num_layers=rnn_num_layers,
+        dropout=dropout
     )
     
     # Step 3: Visualize some example predictions
@@ -288,16 +307,19 @@ if __name__ == "__main__":
     # Replace with your file path
     csv_file_path = "data/LUNR_15m_ohlc.csv"
     
-    # Run the complete pipeline
+    # Run the complete pipeline with ResNet-GRU hybrid model
     model, results, df = run_complete_pipeline(
         csv_file_path,
         window_size=24,  # This is now just used for naming
         step_size=1,     # Not used with daily grouping
         prediction_horizon=1,  # Predict 1 day ahead
         target_column='Close',
-        model_type='resnet18',
+        model_type='resnet18_gru',  # Using GRU by default
         batch_size=32,
-        num_epochs=30  # Reduced for demonstration
+        num_epochs=30,  # Reduced for demonstration
+        rnn_hidden_size=128,
+        rnn_num_layers=1,
+        dropout=0.2
     )
     
     # Predict future prices (next 5 trading days)

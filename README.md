@@ -2,6 +2,13 @@
 
 This project downloads OHLC (Open, High, Low, Close) stock data using the `yfinance` library and generates Gramian Angular Field (GAF) images from the stock's closing prices.
 
+This project is based on
+`
+Barra S, Carta SM, Corriga A, Podda AS, Recupero DR (2020)
+Deep learning and time series-to-image encoding for financial
+forecasting. IEEE/CAA J Autom Sin 73:683–692
+`
+
 ## Requirements
 
 - Python 3.x

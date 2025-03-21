@@ -30,7 +30,7 @@ def get_stock_data_daily(ticker, period):
     save_ohlc_data(stock_data, 'Date', ticker, '1d')
 
 # Define the stock ticker and the period for which you want to download data
-ticker = 'LUNR'
+ticker = 'NVDA'
 intervals = ["15m", "1h", "1d"]
 
 for interval in intervals:
