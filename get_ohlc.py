@@ -13,7 +13,8 @@ def save_ohlc_data(stock_data, date_column, ticker, interval):
     ohlc_data.columns = [col[0] if isinstance(col, tuple) else col for col in ohlc_data.columns]
 
     # Save the OHLC data to a CSV file with the specified format
-    filename = f"data/{ticker}_{interval}_ohlc.csv"
+    # filename = f"data/{ticker}_{interval}_ohlc.csv"
+    filename = f"data/{ticker}_{interval}_new_ohlc.csv"
     ohlc_data.to_csv(filename, index=False)
 
     print(f"OHLC data has been saved to {filename}")
