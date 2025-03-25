@@ -537,27 +537,3 @@ def predict_stock_prices(model, new_gadf_images, device='cpu'):
             predictions.extend(outputs.cpu().numpy())
     
     return np.array(predictions).flatten()
-
-# Example usage
-if __name__ == "__main__":
-    # Load the data from the GADF conversion script
-    X = np.load('gadf_data/X_gadf.npy')
-    y = np.load('gadf_data/y_targets.npy')
-    
-    print(f"Loaded data: X shape: {X.shape}, y shape: {y.shape}")
-    
-    # Train the model
-    model, results = train_stock_prediction_model(
-        X, y, 
-        model_type='resnet18',
-        batch_size=32,
-        num_epochs=50,
-        output_dir='model_output'
-    )
-    
-    # Example of how to use the model for prediction
-    # Load new data (this would be your new GADF images)
-    # new_gadf_images = ...
-    
-    # Make predictions
-    # predictions = predict_stock_prices(model, new_gadf_images)

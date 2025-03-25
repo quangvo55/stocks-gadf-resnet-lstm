@@ -302,6 +302,35 @@ def plot_future_predictions(df, future_predictions, target_column='Close', n_pas
     plt.tight_layout()
     plt.show()
 
+def append_predictions_to_csv(predictions, output_file='predictions/predictions.csv'):
+    """
+    Append predictions to a CSV file.
+    
+    Parameters:
+    -----------
+    predictions : list
+        List of predicted future prices
+    output_file : str
+        Path to the CSV file to append the predictions
+    """
+    # Create a DataFrame with the predictions
+    today = datetime.today().strftime('%Y-%m-%d')
+    data = {
+        'Date': [today],
+        'Prediction1': [predictions[0]],
+        'Prediction2': [predictions[1]],
+        'Prediction3': [predictions[2]],
+        'Prediction4': [predictions[3]],
+        'Prediction5': [predictions[4]]
+    }
+    df = pd.DataFrame(data)
+    
+    # Append to the CSV file
+    if not os.path.isfile(output_file):
+        df.to_csv(output_file, index=False)
+    else:
+        df.to_csv(output_file, mode='a', header=False, index=False)
+
 # Example usage
 if __name__ == "__main__":
     # Replace with your file path
@@ -333,3 +362,6 @@ if __name__ == "__main__":
     print("Future predictions (next trading days):")
     for i, pred in enumerate(future_predictions):
         print(f"Day t+{i+1}: {pred:.2f}")
+    
+    # Append predictions to CSV
+    append_predictions_to_csv(future_predictions)
